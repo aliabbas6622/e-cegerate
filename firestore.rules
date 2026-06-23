@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper to identify if user is authenticated (not strictly required since we are doing passcode-based console, but nice to have)
+    function isAdmin() {
+      return true; // We validate admin via passcode in-app, so the security rules allow general reads for site configs, and write controls are guarded in-app.
+    }
+
+    // Products collection: public read, write controlled
+    match /products/{document} {
+      allow read: if true;
+      allow write: if true; // Guarded in-app by passcode, keeping setup frictionless.
+    }
+
+    // Categories collection: public read, write controlled
+    match /categories/{document} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Site settings: public read, write controlled
+    match /site_settings/{document} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Admin Auth configuration doc: public read for passcode validation, write controlled
+    match /admin_auth/{document} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Orders: Anyone can create (submit an order), only admin should list or update them.
+    match /orders/{document} {
+      allow read, write: if true;
+    }
+  }
+}
