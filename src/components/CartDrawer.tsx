@@ -1,8 +1,6 @@
 import React from 'react';
-import { X, ShoppingBag, Trash2, ArrowLeft, ShieldCheck, CheckCircle2, ChevronRight, Gift } from 'lucide-react';
-import { Product, OrderItem, SiteSettings } from '../types';
-import { db } from '../firebase';
-import { collection, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
+import { X, ShoppingBag, Trash2, ArrowLeft, ShieldCheck, CheckCircle2, ChevronRight, Gift, MessageCircle } from 'lucide-react';
+import { Product, OrderItem, SiteSettings, Order } from '../types';
 import confetti from 'canvas-confetti';
 
 interface CartItem {
@@ -18,6 +16,7 @@ interface CartDrawerProps {
   onRemoveItem: (productId: string) => void;
   onClearCart: () => void;
   settings: SiteSettings;
+  onPlaceOrder: (order: Order) => void;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -27,7 +26,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onUpdateQuantity,
   onRemoveItem,
   onClearCart,
-  settings
+  settings,
+  onPlaceOrder
 }) => {
   const [step, setStep] = React.useState<'cart' | 'checkout' | 'success'>('cart');
   
@@ -39,7 +39,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [city, setCity] = React.useState('');
   const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
   const [placingOrder, setPlacingOrder] = React.useState(false);
-  const [placedOrderDetails, setPlacedOrderDetails] = React.useState<{ id: string; total: number } | null>(null);
+  const [placedOrderDetails, setPlacedOrderDetails] = React.useState<{ id: string; total: number; items: OrderItem[] } | null>(null);
 
   // Auto-fill customer profile if previously ordered
   React.useEffect(() => {
@@ -80,8 +80,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     return Object.keys(errors).length === 0;
   };
 
-  // Submit Order to Firestore
-  const handlePlaceOrder = async (e: React.FormEvent) => {
+  // Submit Order
+  const handlePlaceOrder = (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
 
@@ -95,7 +95,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         image: item.product.images[0]
       }));
 
-      const newOrder = {
+      const orderId = `ord-${Date.now()}`;
+      const newOrder: Order = {
+        id: orderId,
         customerName: fullName.trim(),
         customerEmail: email.trim(),
         customerPhone: phone.trim(),
@@ -103,23 +105,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         customerCity: city.trim(),
         items: orderItems,
         total: grandTotal,
-        status: 'pending' as const,
-        paymentMethod: 'cod' as const,
+        status: 'pending',
+        paymentMethod: 'cod',
         createdAt: Date.now()
       };
 
-      // 1. Add order to Firestore
-      const orderRef = await addDoc(collection(db, 'orders'), newOrder);
+      onPlaceOrder(newOrder);
 
-      // 2. Decrement stock levels of products
-      for (const item of cart) {
-        const prodRef = doc(db, 'products', item.product.id);
-        await updateDoc(prodRef, {
-          stock: increment(-item.quantity)
-        });
-      }
-
-      // 3. Save profile locally for future convenience
+      // Save profile locally for future convenience
       localStorage.setItem('aesthete_customer_profile', JSON.stringify({
         fullName, email, phone, address, city
       }));
@@ -133,7 +126,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       });
 
       // Clear state & transition
-      setPlacedOrderDetails({ id: orderRef.id, total: grandTotal });
+      setPlacedOrderDetails({ id: orderId, total: grandTotal, items: orderItems });
       onClearCart();
       setStep('success');
     } catch (err) {
@@ -151,17 +144,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden" id="cart-drawer-root">
-      {/* Backdrop overlay */}
       <div 
         className="absolute inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-300"
         onClick={onClose}
       />
 
-      {/* Main Drawer Slide */}
       <div className="absolute inset-y-0 right-0 max-w-full flex">
         <div className="w-screen max-w-md bg-white flex flex-col shadow-2xl animate-slide-in relative border-l border-gray-100">
           
-          {/* Header Bar */}
           <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               {step === 'checkout' ? (
@@ -189,13 +179,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </button>
           </div>
 
-          {/* STEP 1: REVIEW CART */}
           {step === 'cart' && (
             <>
               {cart.length > 0 ? (
                 <>
                   <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-                    {/* Free Shipping Goal Tracker */}
                     <div className="bg-gray-50/50 rounded-xl p-4 border border-gray-100/50 space-y-3">
                       <div className="flex items-start gap-2.5 text-xs text-gray-600">
                         <Gift className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -212,7 +200,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         </div>
                       </div>
 
-                      {/* Progress Bar */}
                       <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
                         <div 
                           className="h-full rounded-full transition-all duration-500"
@@ -224,7 +211,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       </div>
                     </div>
 
-                    {/* Cart Items List */}
                     <div className="space-y-4" id="cart-items-list">
                       {cart.map((item) => (
                         <div 
@@ -232,7 +218,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           className="flex items-center gap-4 py-4 border-b border-gray-100/60"
                           id={`cart-item-${item.product.id}`}
                         >
-                          {/* Image */}
                           <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-50 border border-gray-100 flex-shrink-0">
                             <img 
                               src={item.product.images[0]} 
@@ -242,12 +227,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                             />
                           </div>
 
-                          {/* Middle info */}
                           <div className="flex-1 min-w-0">
                             <h4 className="text-xs font-semibold text-gray-900 truncate tracking-tight">{item.product.name}</h4>
                             <p className="text-xs font-bold text-gray-500 mt-0.5">${item.product.price}</p>
                             
-                            {/* Item Quantity control */}
                             <div className="flex items-center gap-2 mt-2 select-none">
                               <button
                                 onClick={() => onUpdateQuantity(item.product.id, item.quantity - 1)}
@@ -266,7 +249,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                             </div>
                           </div>
 
-                          {/* Remove actions button */}
                           <button
                             onClick={() => onRemoveItem(item.product.id)}
                             className="p-1.5 text-gray-300 hover:text-rose-600 transition-colors cursor-pointer rounded-lg hover:bg-rose-50"
@@ -279,7 +261,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     </div>
                   </div>
 
-                  {/* Footer totals & checkout navigation */}
                   <div className="border-t border-gray-100 p-6 bg-white space-y-4">
                     <div className="space-y-2">
                       <div className="flex justify-between text-xs text-gray-500 font-medium">
@@ -302,7 +283,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       </div>
                     </div>
 
-                    {/* Proceed to checkout trigger */}
                     <button
                       onClick={() => setStep('checkout')}
                       className="w-full h-12 rounded-full font-semibold text-sm tracking-wide text-white transition-all transform active:scale-95 duration-200 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
@@ -312,9 +292,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       Proceed to Checkout
                       <ChevronRight className="w-4 h-4" />
                     </button>
-                    <p className="text-[10px] text-gray-400 text-center font-medium leading-tight">
-                      Secure checkout powered by cash on delivery. 
-                    </p>
                   </div>
                 </>
               ) : (
@@ -323,9 +300,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <ShoppingBag className="w-8 h-8" />
                   </div>
                   <h4 className="text-sm font-display font-semibold text-gray-950 mb-1">Your bag is empty</h4>
-                  <p className="text-xs text-gray-400 max-w-xs leading-relaxed mb-6">
-                    Add minimalist accents to your daily life by exploring our limited collections.
-                  </p>
                   <button
                     onClick={onClose}
                     className="px-5 py-2.5 rounded-full border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-all cursor-pointer"
@@ -337,12 +311,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </>
           )}
 
-          {/* STEP 2: SHIPPING DETAILS FORM */}
           {step === 'checkout' && (
             <form onSubmit={handlePlaceOrder} className="flex-1 flex flex-col h-full overflow-hidden">
               <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-                
-                {/* Secure checkout info indicator */}
                 <div className="bg-blue-50/50 rounded-xl p-3.5 border border-blue-100/50 flex items-center gap-3">
                   <ShieldCheck className="w-5 h-5 text-blue-600 flex-shrink-0" />
                   <p className="text-[11px] text-blue-800 leading-normal font-medium">
@@ -350,9 +321,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </p>
                 </div>
 
-                {/* Form fields */}
                 <div className="space-y-4">
-                  {/* Name field */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Full Name</label>
                     <input
@@ -365,7 +334,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     {formErrors.fullName && <p className="text-[10px] text-rose-500 font-medium mt-1">{formErrors.fullName}</p>}
                   </div>
 
-                  {/* Email field */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Email Address</label>
                     <input
@@ -378,7 +346,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     {formErrors.email && <p className="text-[10px] text-rose-500 font-medium mt-1">{formErrors.email}</p>}
                   </div>
 
-                  {/* Phone field */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Phone Number</label>
                     <input
@@ -391,7 +358,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     {formErrors.phone && <p className="text-[10px] text-rose-500 font-medium mt-1">{formErrors.phone}</p>}
                   </div>
 
-                  {/* Address field */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Delivery Address</label>
                     <input
@@ -404,7 +370,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     {formErrors.address && <p className="text-[10px] text-rose-500 font-medium mt-1">{formErrors.address}</p>}
                   </div>
 
-                  {/* City field */}
                   <div>
                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">City</label>
                     <input
@@ -417,27 +382,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     {formErrors.city && <p className="text-[10px] text-rose-500 font-medium mt-1">{formErrors.city}</p>}
                   </div>
                 </div>
-
-                {/* Order Summary segment */}
-                <div className="border-t border-gray-100 pt-4 space-y-2">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Your Order</h4>
-                  <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 text-xs text-gray-600">
-                    {cart.map((item) => (
-                      <div key={item.product.id} className="flex justify-between">
-                        <span className="truncate max-w-[200px]">{item.product.name} (x{item.quantity})</span>
-                        <span className="font-semibold text-gray-800">${(item.product.price * item.quantity).toFixed(2)}</span>
-                      </div>
-                    ))}
-                    <div className="border-t border-gray-200/60 pt-1.5 flex justify-between font-bold text-gray-800">
-                      <span>Delivery (COD)</span>
-                      <span>{shippingCost === 0 ? 'Free' : `$${shippingCost}`}</span>
-                    </div>
-                  </div>
-                </div>
-
               </div>
 
-              {/* Form placement footer */}
               <div className="border-t border-gray-100 p-6 bg-white space-y-3">
                 <div className="flex justify-between text-sm font-bold text-gray-900 font-display">
                   <span>Grand Total to Pay</span>
@@ -457,7 +403,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </form>
           )}
 
-          {/* STEP 3: ORDER SUCCESS CELEBRATION */}
           {step === 'success' && (
             <div className="flex-1 overflow-y-auto px-6 py-12 flex flex-col items-center justify-center text-center space-y-6">
               <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-500">
@@ -466,9 +411,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
               <div className="space-y-2">
                 <h3 className="text-xl font-display font-bold text-gray-950">Thank you for your order!</h3>
-                <p className="text-xs text-gray-500 max-w-xs leading-relaxed mx-auto">
-                  Your order is received and is currently being processed by our curation house.
-                </p>
               </div>
 
               {placedOrderDetails && (
@@ -478,19 +420,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <p className="text-xs font-mono font-semibold text-gray-700 mt-0.5">{placedOrderDetails.id}</p>
                   </div>
                   <div>
-                    <h5 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Payment Method</h5>
-                    <p className="text-xs font-semibold text-gray-700 mt-0.5">Cash on Delivery (COD)</p>
-                  </div>
-                  <div>
                     <h5 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Amount</h5>
                     <p className="text-xs font-bold text-gray-900 mt-0.5">${placedOrderDetails.total.toFixed(2)}</p>
                   </div>
                 </div>
               )}
 
-              <div className="bg-amber-50/50 rounded-xl p-3.5 border border-amber-100/40 text-[11px] text-amber-800 text-left leading-normal font-medium max-w-xs">
-                💡 A fulfillment assistant will phone you shortly to confirm the delivery window.
-              </div>
+              <button
+                onClick={() => {
+                  const itemsSummary = placedOrderDetails?.items.map(item => `- ${item.name} (x${item.quantity})`).join('\n') || '';
+                  const message = encodeURIComponent(`Hello! I've just placed an order (Ref: ${placedOrderDetails?.id}).\n\nOrder Details:\n${itemsSummary}\n\nTotal: $${placedOrderDetails?.total.toFixed(2)}\n\nCustomer: ${fullName}\nPhone: ${phone}\nAddress: ${address}, ${city}`);
+                  window.open(`https://wa.me/${settings.adminPhone}?text=${message}`, '_blank');
+                }}
+                className="w-full h-12 rounded-full font-semibold text-sm tracking-wide text-white bg-emerald-600 hover:bg-emerald-700 transition-all transform active:scale-95 duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+              >
+                <MessageCircle className="w-5 h-5" />
+                Complete Order via WhatsApp
+              </button>
 
               <button
                 onClick={handleReset}
@@ -500,7 +446,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </button>
             </div>
           )}
-
         </div>
       </div>
     </div>

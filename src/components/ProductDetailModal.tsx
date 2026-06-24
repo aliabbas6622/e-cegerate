@@ -1,6 +1,6 @@
 import React from 'react';
-import { X, ShoppingBag, Check, ShieldCheck, Heart, Sparkles, RefreshCw, Play } from 'lucide-react';
-import { Product, Category } from '../types';
+import { X, ShoppingBag, Check, ShieldCheck, Heart, Sparkles, RefreshCw, Play, MessageCircle } from 'lucide-react';
+import { Product, Category, SiteSettings } from '../types';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -8,6 +8,7 @@ interface ProductDetailModalProps {
   onClose: () => void;
   onAddToCart: (product: Product, quantity: number) => void;
   accentColor: string;
+  settings: SiteSettings;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -15,7 +16,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   categories,
   onClose,
   onAddToCart,
-  accentColor
+  accentColor,
+  settings
 }) => {
   const [quantity, setQuantity] = React.useState(1);
   const [added, setAdded] = React.useState(false);
@@ -269,27 +271,41 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             {/* Main Action trigger */}
             {product.stock > 0 ? (
-              <button
-                onClick={handleAddToCart}
-                disabled={added}
-                className="flex-1 h-12 rounded-full font-semibold text-sm tracking-wide text-white transition-all transform active:scale-95 duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-sm"
-                style={{ 
-                  backgroundColor: added ? '#059669' : (accentColor || '#3b82f6')
-                }}
-                id="detail-add-to-cart-btn"
-              >
-                {added ? (
-                  <>
-                    <Check className="w-4 h-4 text-white" />
-                    Added to Bag
-                  </>
-                ) : (
-                  <>
-                    <ShoppingBag className="w-4 h-4 text-white" />
-                    Add to Bag — ${(product.price * quantity).toFixed(2)}
-                  </>
-                )}
-              </button>
+              <>
+                <button
+                  onClick={handleAddToCart}
+                  disabled={added}
+                  className="flex-1 h-12 rounded-full font-semibold text-sm tracking-wide text-white transition-all transform active:scale-95 duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                  style={{
+                    backgroundColor: added ? '#059669' : (accentColor || '#3b82f6')
+                  }}
+                  id="detail-add-to-cart-btn"
+                >
+                  {added ? (
+                    <>
+                      <Check className="w-4 h-4 text-white" />
+                      Added to Bag
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4 text-white" />
+                      Add to Bag — ${(product.price * quantity).toFixed(2)}
+                    </>
+                  )}
+                </button>
+
+                {/* Order via WhatsApp direct button */}
+                <button
+                  onClick={() => {
+                    const message = encodeURIComponent(`Hello, I'm interested in ordering ${product.name} (x${quantity}) priced at $${(product.price * quantity).toFixed(2)}`);
+                    window.open(`https://wa.me/${settings.adminPhone}?text=${message}`, '_blank');
+                  }}
+                  className="h-12 px-6 rounded-full font-semibold text-sm tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white transition-all transform active:scale-95 duration-200 cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Order on WhatsApp
+                </button>
+              </>
             ) : (
               <button
                 disabled

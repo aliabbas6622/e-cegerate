@@ -1,28 +1,12 @@
-import { initializeApp } from 'firebase/app';
-import { 
-  getFirestore, 
-  collection, 
-  getDocs, 
-  setDoc, 
-  doc, 
-  writeBatch,
-  query,
-  limit
-} from 'firebase/firestore';
-import config from '../firebase-applet-config.json';
 import { Product, Category, SiteSettings } from './types';
 
-const app = initializeApp(config);
-export const db = getFirestore(app);
-
-// Pre-packaged placeholder premium assets (high-quality clean tech/minimal products)
-const DEFAULT_CATEGORIES: Category[] = [
+export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'audio', name: 'Audio & Sound', slug: 'audio' },
   { id: 'wearables', name: 'Wearables', slug: 'wearables' },
   { id: 'home', name: 'Home Living', slug: 'home' }
 ];
 
-const DEFAULT_PRODUCTS: Product[] = [
+export const DEFAULT_PRODUCTS: Product[] = [
   {
     id: 'prod-1',
     name: 'AeroPods Premium',
@@ -31,7 +15,7 @@ const DEFAULT_PRODUCTS: Product[] = [
     originalPrice: 349,
     categoryId: 'audio',
     images: ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=800'],
-    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb', // A valid fallback model for sample
+    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb',
     stock: 15,
     featured: true,
     createdAt: Date.now() - 5 * 24 * 60 * 60 * 1000
@@ -44,7 +28,7 @@ const DEFAULT_PRODUCTS: Product[] = [
     originalPrice: 449,
     categoryId: 'wearables',
     images: ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&q=80&w=800'],
-    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ToyCar/glTF-Binary/ToyCar.glb', // A valid fallback model for sample
+    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/ToyCar/glTF-Binary/ToyCar.glb',
     stock: 8,
     featured: true,
     createdAt: Date.now() - 4 * 24 * 60 * 60 * 1000
@@ -86,7 +70,7 @@ const DEFAULT_PRODUCTS: Product[] = [
   }
 ];
 
-const DEFAULT_SETTINGS: SiteSettings = {
+export const DEFAULT_SETTINGS: SiteSettings = {
   id: 'main',
   heroTitle: 'Designed for perfection, built for daily living.',
   heroSubtitle: 'Discover our limited collection of premium minimalist devices engineered with high-end materials and flawless acoustic tuning.',
@@ -94,45 +78,8 @@ const DEFAULT_SETTINGS: SiteSettings = {
   heroImage: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=1200',
   heroModelActive: true,
   heroModelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb',
-  accentColor: '#3b82f6', // Premium Light Blue
+  accentColor: '#3b82f6',
   announcementText: '✨ FREE SHIPPING WORLDWIDE ON ORDERS OVER $150',
-  promoActive: true
+  promoActive: true,
+  adminPhone: '1234567890'
 };
-
-export async function seedDatabase() {
-  try {
-    const categoriesSnap = await getDocs(query(collection(db, 'categories'), limit(1)));
-    if (categoriesSnap.empty) {
-      console.log('Database empty, seeding default categories, products, and site settings...');
-      
-      const batch = writeBatch(db);
-
-      // Seed categories
-      DEFAULT_CATEGORIES.forEach((cat) => {
-        const docRef = doc(db, 'categories', cat.id);
-        batch.set(docRef, cat);
-      });
-
-      // Seed products
-      DEFAULT_PRODUCTS.forEach((prod) => {
-        const docRef = doc(db, 'products', prod.id);
-        batch.set(docRef, prod);
-      });
-
-      // Seed settings
-      const settingsRef = doc(db, 'site_settings', 'main');
-      batch.set(settingsRef, DEFAULT_SETTINGS);
-
-      // Seed a default admin passcode
-      const authRef = doc(db, 'admin_auth', 'config');
-      batch.set(authRef, { passcode: 'admin123' });
-
-      await batch.commit();
-      console.log('Seeding completed successfully!');
-    } else {
-      console.log('Database already has data, skipping seeding.');
-    }
-  } catch (err) {
-    console.error('Error seeding database:', err);
-  }
-}
