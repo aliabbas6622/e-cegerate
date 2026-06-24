@@ -249,6 +249,7 @@ export default function App() {
       <ProductCatalog
         products={products}
         categories={categories}
+        settings={settings}
         activeCategory={activeCategory}
         onSelectCategory={setActiveCategory}
         onProductClick={setSelectedProduct}

@@ -1,10 +1,11 @@
 import React from 'react';
-import { Search, SlidersHorizontal, Plus, Sparkles } from 'lucide-react';
-import { Product, Category } from '../types';
+import { Search, SlidersHorizontal, Plus, Sparkles, MessageCircle } from 'lucide-react';
+import { Product, Category, SiteSettings } from '../types';
 
 interface ProductCatalogProps {
   products: Product[];
   categories: Category[];
+  settings: SiteSettings;
   activeCategory: string;
   onSelectCategory: (id: string) => void;
   onProductClick: (product: Product) => void;
@@ -15,6 +16,7 @@ interface ProductCatalogProps {
 export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   products,
   categories,
+  settings,
   activeCategory,
   onSelectCategory,
   onProductClick,
@@ -232,27 +234,44 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                     )}
                   </div>
 
-                  {/* Add to Cart quick button */}
-                  {prod.stock > 0 && (
-                    <button
-                      onClick={(e) => onAddToCart(prod, e)}
-                      className="p-2.5 rounded-full bg-gray-50 border border-gray-100 text-gray-700 hover:text-white hover:border-transparent transition-all cursor-pointer shadow-xs active:scale-95 duration-200 flex items-center justify-center group/btn"
-                      style={{ 
-                        // Set background-color hover via custom dynamic inline rule
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = accentColor;
-                        e.currentTarget.style.color = '#ffffff';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f9fafb';
-                        e.currentTarget.style.color = '#374151';
-                      }}
-                      title="Quick Add to Cart"
-                    >
-                      <Plus className="w-4 h-4 stroke-[2.5]" />
-                    </button>
-                  )}
+                  {/* Action buttons */}
+                  <div className="flex gap-2">
+                    {prod.stock > 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const message = encodeURIComponent(`Hello, I'm interested in ordering ${prod.name} priced at $${prod.price}`);
+                          window.open(`https://wa.me/${settings.adminPhone}?text=${message}`, '_blank');
+                        }}
+                        className="p-2.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all cursor-pointer shadow-xs active:scale-95 duration-200 flex items-center justify-center"
+                        title="Order on WhatsApp"
+                      >
+                        <MessageCircle className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                    )}
+
+                    {/* Add to Cart quick button */}
+                    {prod.stock > 0 && (
+                      <button
+                        onClick={(e) => onAddToCart(prod, e)}
+                        className="p-2.5 rounded-full bg-gray-50 border border-gray-100 text-gray-700 hover:text-white hover:border-transparent transition-all cursor-pointer shadow-xs active:scale-95 duration-200 flex items-center justify-center group/btn"
+                        style={{
+                          // Set background-color hover via custom dynamic inline rule
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = accentColor;
+                          e.currentTarget.style.color = '#ffffff';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = '#f9fafb';
+                          e.currentTarget.style.color = '#374151';
+                        }}
+                        title="Quick Add to Cart"
+                      >
+                        <Plus className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

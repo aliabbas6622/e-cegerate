@@ -45,6 +45,52 @@ export const DEFAULT_PRODUCTS: Product[] = [
     createdAt: Date.now() - 3 * 24 * 60 * 60 * 1000
   },
   {
+    id: 'prod-6',
+    name: 'Apex Mechanical Keyboard',
+    description: 'Precision-engineered mechanical keyboard with hot-swappable tactile switches, per-key RGB backlighting, and a solid CNC-machined aluminum frame for ultimate durability and typing comfort.',
+    price: 179,
+    originalPrice: 199,
+    categoryId: 'home',
+    images: ['https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?auto=format&fit=crop&q=80&w=800'],
+    stock: 12,
+    featured: false,
+    createdAt: Date.now() - 2.5 * 24 * 60 * 60 * 1000
+  },
+  {
+    id: 'prod-7',
+    name: 'Nova Noise-Cancelling Buds',
+    description: 'Ultra-lightweight true wireless earbuds with custom-tuned 11mm drivers, advanced adaptive ANC, and 6-microphone system for crystal-clear calls in any environment.',
+    price: 159,
+    categoryId: 'audio',
+    images: ['https://images.unsplash.com/photo-1590658268037-6bf12165a8df?auto=format&fit=crop&q=80&w=800'],
+    stock: 35,
+    featured: true,
+    createdAt: Date.now() - 2.2 * 24 * 60 * 60 * 1000
+  },
+  {
+    id: 'prod-8',
+    name: 'Zenith Charging Hub',
+    description: 'The ultimate power station for your ecosystem. Delivers 100W GaN fast charging across 3 USB-C ports and a dedicated 15W MagSafe-compatible wireless pad.',
+    price: 99,
+    originalPrice: 129,
+    categoryId: 'home',
+    images: ['https://images.unsplash.com/photo-1616440347437-b1c73416efc2?auto=format&fit=crop&q=80&w=800'],
+    stock: 50,
+    featured: false,
+    createdAt: Date.now() - 1.5 * 24 * 60 * 60 * 1000
+  },
+  {
+    id: 'prod-9',
+    name: 'Vanguard Field Watch',
+    description: 'Rugged elegance meets modern utility. Features a scratch-resistant DLC-coated stainless steel case, hybrid analog-digital movement, and a durable FKM rubber strap.',
+    price: 249,
+    categoryId: 'wearables',
+    images: ['https://images.unsplash.com/photo-1522312346375-d1a52e2b99b3?auto=format&fit=crop&q=80&w=800'],
+    stock: 20,
+    featured: true,
+    createdAt: Date.now() - 1 * 24 * 60 * 60 * 1000
+  },
+  {
     id: 'prod-4',
     name: 'Soma Premium Stand',
     description: 'A minimalist oakwood charging stand designed to mount your phone, watch, and earbuds in a singular, sculptural profile. Includes certified fast wireless charging coils.',
