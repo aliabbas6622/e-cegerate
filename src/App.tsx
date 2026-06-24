@@ -24,16 +24,10 @@ import {
   SiteSettings 
 } from './types';
 import { 
-  db, 
-  seedDatabase 
-} from './firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  orderBy, 
-  doc 
-} from 'firebase/firestore';
+  DEFAULT_PRODUCTS,
+  DEFAULT_CATEGORIES,
+  DEFAULT_SETTINGS
+} from './data';
 import { RefreshCw } from 'lucide-react';
 
 interface CartItem {
@@ -42,7 +36,7 @@ interface CartItem {
 }
 
 export default function App() {
-  // DB States
+  // Local States
   const [products, setProducts] = React.useState<Product[]>([]);
   const [categories, setCategories] = React.useState<Category[]>([]);
   const [orders, setOrders] = React.useState<Order[]>([]);
@@ -58,71 +52,48 @@ export default function App() {
   // Shopping Bag State
   const [cart, setCart] = React.useState<CartItem[]>([]);
 
-  // 1. Initial Seeding and Database Listeners Setup
+  // 1. Initial Load from localStorage or Defaults
   React.useEffect(() => {
-    let unsubscribeProducts = () => {};
-    let unsubscribeCategories = () => {};
-    let unsubscribeSettings = () => {};
-    let unsubscribeOrders = () => {};
-
-    const initApp = async () => {
+    const loadData = () => {
       try {
-        // Run database seeding if empty
-        await seedDatabase();
+        const storedProducts = localStorage.getItem('aesthete_products');
+        if (storedProducts) {
+          setProducts(JSON.parse(storedProducts));
+        } else {
+          setProducts(DEFAULT_PRODUCTS);
+          localStorage.setItem('aesthete_products', JSON.stringify(DEFAULT_PRODUCTS));
+        }
 
-        // Subscribe to products list (newest first)
-        const qProd = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
-        unsubscribeProducts = onSnapshot(qProd, (snapshot) => {
-          const items: Product[] = [];
-          snapshot.forEach((doc) => {
-            items.push({ id: doc.id, ...doc.data() } as Product);
-          });
-          setProducts(items);
-        }, (err) => console.error("Error listening to products:", err));
+        const storedCategories = localStorage.getItem('aesthete_categories');
+        if (storedCategories) {
+          setCategories(JSON.parse(storedCategories));
+        } else {
+          setCategories(DEFAULT_CATEGORIES);
+          localStorage.setItem('aesthete_categories', JSON.stringify(DEFAULT_CATEGORIES));
+        }
 
-        // Subscribe to categories list
-        const qCat = query(collection(db, 'categories'), orderBy('name', 'asc'));
-        unsubscribeCategories = onSnapshot(qCat, (snapshot) => {
-          const items: Category[] = [];
-          snapshot.forEach((doc) => {
-            items.push({ id: doc.id, ...doc.data() } as Category);
-          });
-          setCategories(items);
-        }, (err) => console.error("Error listening to categories:", err));
+        const storedSettings = localStorage.getItem('aesthete_settings');
+        if (storedSettings) {
+          setSettings(JSON.parse(storedSettings));
+        } else {
+          setSettings(DEFAULT_SETTINGS);
+          localStorage.setItem('aesthete_settings', JSON.stringify(DEFAULT_SETTINGS));
+        }
 
-        // Subscribe to site settings
-        const settingsRef = doc(db, 'site_settings', 'main');
-        unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setSettings(docSnap.data() as SiteSettings);
-          }
-        }, (err) => console.error("Error listening to settings:", err));
-
-        // Subscribe to orders (newest first)
-        const qOrd = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
-        unsubscribeOrders = onSnapshot(qOrd, (snapshot) => {
-          const items: Order[] = [];
-          snapshot.forEach((doc) => {
-            items.push({ id: doc.id, ...doc.data() } as Order);
-          });
-          setOrders(items);
-        }, (err) => console.error("Error listening to orders:", err));
-
+        const storedOrders = localStorage.getItem('aesthete_orders');
+        if (storedOrders) {
+          setOrders(JSON.parse(storedOrders));
+        } else {
+          setOrders([]);
+        }
       } catch (err) {
-        console.error("Initialization error:", err);
+        console.error("Error loading data:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    initApp();
-
-    return () => {
-      unsubscribeProducts();
-      unsubscribeCategories();
-      unsubscribeSettings();
-      unsubscribeOrders();
-    };
+    loadData();
   }, []);
 
   // 2. Load Cart from localStorage on mount
@@ -135,14 +106,12 @@ export default function App() {
     }
   }, []);
 
-  // 3. Sync Cart state with localStorage and keep product quantities accurate
+  // 3. Sync Cart state with products and keep quantities accurate
   React.useEffect(() => {
     if (products.length > 0 && cart.length > 0) {
-      // Sync cart item stocks if changed in backend
       const updatedCart = cart.map((item) => {
         const freshProd = products.find((p) => p.id === item.product.id);
         if (freshProd) {
-          // Adjust quantity if stock is lower now
           const adjustedQty = Math.min(item.quantity, freshProd.stock);
           return {
             product: freshProd,
@@ -150,7 +119,7 @@ export default function App() {
           };
         }
         return item;
-      }).filter((item) => products.some((p) => p.id === item.product.id) && item.product.stock > 0); // Remove deleted or out of stock items
+      }).filter((item) => products.some((p) => p.id === item.product.id) && item.product.stock > 0);
 
       if (JSON.stringify(updatedCart) !== JSON.stringify(cart)) {
         setCart(updatedCart);
@@ -158,6 +127,33 @@ export default function App() {
       }
     }
   }, [products]);
+
+  // Data update handlers
+  const updateProducts = (newProducts: Product[]) => {
+    setProducts(newProducts);
+    localStorage.setItem('aesthete_products', JSON.stringify(newProducts));
+  };
+
+  const updateSettings = (newSettings: SiteSettings) => {
+    setSettings(newSettings);
+    localStorage.setItem('aesthete_settings', JSON.stringify(newSettings));
+  };
+
+  const addOrder = (order: Order) => {
+    const newOrders = [order, ...orders];
+    setOrders(newOrders);
+    localStorage.setItem('aesthete_orders', JSON.stringify(newOrders));
+
+    // Update stock levels
+    const updatedProducts = products.map(p => {
+      const orderItem = order.items.find(item => item.productId === p.id);
+      if (orderItem) {
+        return { ...p, stock: p.stock - orderItem.quantity };
+      }
+      return p;
+    });
+    updateProducts(updatedProducts);
+  };
 
   // Cart operations helpers
   const saveCart = (newCart: CartItem[]) => {
@@ -170,19 +166,18 @@ export default function App() {
     let newCart = [...cart];
 
     if (existingIndex > -1) {
-      // Increment existing quantity within stock limits
       const updatedQty = Math.min(product.stock, newCart[existingIndex].quantity + quantity);
       newCart[existingIndex].quantity = updatedQty;
     } else {
-      // Add fresh new item
       newCart.push({ product, quantity: Math.min(product.stock, quantity) });
     }
 
     saveCart(newCart);
+    setCartOpen(true);
   };
 
   const handleQuickAddToCart = (product: Product, e: React.MouseEvent) => {
-    e.stopPropagation(); // Avoid triggering open modal
+    e.stopPropagation();
     handleAddToCart(product, 1);
     setCartOpen(true);
   };
@@ -236,7 +231,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col antialiased">
-      {/* 1. Header Navigation */}
       <Navbar
         settings={settings}
         cartCount={cartCount}
@@ -247,13 +241,11 @@ export default function App() {
         onSelectCategory={setActiveCategory}
       />
 
-      {/* 2. Visual Hero split screen */}
       <Hero
         settings={settings}
         onExploreClick={handleExploreClick}
       />
 
-      {/* 3. Product Catalog Grid */}
       <ProductCatalog
         products={products}
         categories={categories}
@@ -264,7 +256,6 @@ export default function App() {
         accentColor={accentColor}
       />
 
-      {/* 4. Elegant Minimalist Footer */}
       <footer className="bg-gray-50 border-t border-gray-100 py-16 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-12 gap-8 text-left">
           <div className="md:col-span-6 space-y-4">
@@ -309,16 +300,15 @@ export default function App() {
         </div>
       </footer>
 
-      {/* 5. Product Detail Slide-over drawer */}
       <ProductDetailModal
         product={selectedProduct}
         categories={categories}
         onClose={() => setSelectedProduct(null)}
         onAddToCart={handleAddToCart}
         accentColor={accentColor}
+        settings={settings}
       />
 
-      {/* 6. Shopping Bag & Checkout Drawer */}
       <CartDrawer
         isOpen={cartOpen}
         onClose={() => setCartOpen(false)}
@@ -327,9 +317,9 @@ export default function App() {
         onRemoveItem={handleRemoveCartItem}
         onClearCart={handleClearCart}
         settings={settings}
+        onPlaceOrder={addOrder}
       />
 
-      {/* 7. Fully unlocked Admin dashboard panel */}
       <AdminDashboard
         isOpen={adminOpen}
         onClose={() => setAdminOpen(false)}
@@ -337,8 +327,9 @@ export default function App() {
         categories={categories}
         settings={settings}
         orders={orders}
-        onRefreshData={() => {}} // Firestore listeners handle this automatically in real-time!
         accentColor={accentColor}
+        onUpdateProducts={updateProducts}
+        onUpdateSettings={updateSettings}
       />
     </div>
   );

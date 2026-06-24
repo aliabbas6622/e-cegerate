@@ -12,13 +12,9 @@ import {
   Check, 
   Sparkles, 
   AlertCircle, 
-  Database, 
-  ArrowUpRight,
   TrendingUp,
-  Settings,
   Link2,
-  Copy,
-  ChevronDown
+  Copy
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -30,17 +26,6 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { Product, Category, Order, SiteSettings } from '../types';
-import { db } from '../firebase';
-import { 
-  collection, 
-  getDocs, 
-  doc, 
-  setDoc, 
-  addDoc, 
-  deleteDoc, 
-  updateDoc,
-  getDoc 
-} from 'firebase/firestore';
 
 interface AdminDashboardProps {
   isOpen: boolean;
@@ -49,8 +34,9 @@ interface AdminDashboardProps {
   categories: Category[];
   settings: SiteSettings;
   orders: Order[];
-  onRefreshData: () => void;
   accentColor: string;
+  onUpdateProducts: (products: Product[]) => void;
+  onUpdateSettings: (settings: SiteSettings) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -60,13 +46,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   categories,
   settings,
   orders,
-  onRefreshData,
-  accentColor
+  accentColor,
+  onUpdateProducts,
+  onUpdateSettings
 }) => {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = React.useState(false);
   const [passcode, setPasscode] = React.useState('');
-  const [actualPasscode, setActualPasscode] = React.useState('admin123');
+  const [actualPasscode, setActualPasscode] = React.useState(() => localStorage.getItem('aesthete_admin_passcode') || 'admin123');
   const [authError, setAuthError] = React.useState('');
 
   // Active Tab
@@ -102,6 +89,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     accentColor: '#3b82f6',
     announcementText: '',
     promoActive: true,
+    adminPhone: '',
     newPasscode: ''
   });
   const [savingSettings, setSavingSettings] = React.useState(false);
@@ -121,22 +109,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     { name: 'Unsplash - Amber Light Lamp', url: 'https://images.unsplash.com/photo-1507646227500-4d389b0012be?auto=format&fit=crop&q=80&w=800', type: 'image' }
   ];
 
-  // Fetch passcode from Firestore on mount
+  // Sync settings form on mount or settings change
   React.useEffect(() => {
     if (isOpen) {
-      const fetchAuth = async () => {
-        try {
-          const authDoc = await getDoc(doc(db, 'admin_auth', 'config'));
-          if (authDoc.exists()) {
-            setActualPasscode(authDoc.data().passcode || 'admin123');
-          }
-        } catch (err) {
-          console.error("Error fetching admin config:", err);
-        }
-      };
-      fetchAuth();
-
-      // Sync settings form
       setSettingsForm({
         heroTitle: settings.heroTitle || '',
         heroSubtitle: settings.heroSubtitle || '',
@@ -147,10 +122,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         accentColor: settings.accentColor || '#3b82f6',
         announcementText: settings.announcementText || '',
         promoActive: settings.promoActive !== false,
+        adminPhone: settings.adminPhone || '',
         newPasscode: ''
       });
     }
   }, [isOpen, settings]);
+
+  // Calculate Overview Metrics
+  const totalRevenue = orders
+    .filter(o => o.status !== 'cancelled')
+    .reduce((acc, o) => acc + o.total, 0);
+
+  const pendingOrders = orders.filter(o => o.status === 'pending').length;
+  const lowStockProducts = products.filter(p => p.stock <= 3).length;
+
+  // Chart Data compilation (last 7 days of sales)
+  const chartData = React.useMemo(() => {
+    const days: Record<string, number> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      days[label] = 0;
+    }
+
+    orders.forEach((ord) => {
+      if (ord.status !== 'cancelled') {
+        const ordDate = new Date(ord.createdAt);
+        const label = ordDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        if (days[label] !== undefined) {
+          days[label] += ord.total;
+        }
+      }
+    });
+
+    return Object.entries(days).map(([name, sales]) => ({ name, sales }));
+  }, [orders]);
 
   if (!isOpen) return null;
 
@@ -165,18 +172,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Handle Order Status Update
-  const handleUpdateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
-    try {
-      await updateDoc(doc(db, 'orders', orderId), { status: newStatus });
-      onRefreshData();
-    } catch (err) {
-      console.error("Failed to update status:", err);
-    }
-  };
-
   // Handle Product Add or Edit Submit
-  const handleProductSubmit = async (e: React.FormEvent) => {
+  const handleProductSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodForm.name || prodForm.price <= 0 || !prodForm.imageUrl) {
       alert("Please complete all required fields.");
@@ -200,15 +197,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       if (editingProduct) {
         // Edit Mode
-        await setDoc(doc(db, 'products', editingProduct.id), finalProductData);
+        const updatedProducts = products.map(p => p.id === editingProduct.id ? { ...finalProductData, id: p.id } : p);
+        onUpdateProducts(updatedProducts);
         setEditingProduct(null);
       } else {
         // Add Mode
         const newDocId = `prod-${Date.now()}`;
-        await setDoc(doc(db, 'products', newDocId), {
-          ...finalProductData,
-          id: newDocId
-        });
+        const newProducts = [{ ...finalProductData, id: newDocId }, ...products];
+        onUpdateProducts(newProducts);
         setIsAddingProduct(false);
       }
 
@@ -224,8 +220,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         modelUrl: '',
         featured: false
       });
-
-      onRefreshData();
     } catch (err) {
       console.error("Failed to save product:", err);
     } finally {
@@ -233,7 +227,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // AI Description Generator (Express proxy to Gemini)
+  // AI Description Generator
   const handleAIGenerateDescription = async () => {
     if (!prodForm.name) {
       alert("Please enter a product name first before generating a description.");
@@ -248,36 +242,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         body: JSON.stringify({
           productName: prodForm.name,
           category: categories.find(c => c.id === prodForm.categoryId)?.name || 'Retail',
-          features: prodForm.description // Use any early draft text as features
+          features: prodForm.description
         })
       });
       const data = await res.json();
       if (data.description) {
         setProdForm(prev => ({ ...prev, description: data.description }));
       } else {
-        alert(data.error || "Could not generate description. Please ensure server is running and key is configured.");
+        alert(data.error || "Could not generate description.");
       }
     } catch (err) {
       console.error("AI Generation request failed:", err);
-      alert("API call failed. Make sure the server.ts backend is active.");
     } finally {
       setGeneratingAI(false);
     }
   };
 
   // Delete Product
-  const handleDeleteProduct = async (prodId: string) => {
+  const handleDeleteProduct = (prodId: string) => {
     if (!confirm("Are you sure you want to delete this product?")) return;
-    try {
-      await deleteDoc(doc(db, 'products', prodId));
-      onRefreshData();
-    } catch (err) {
-      console.error("Failed to delete product:", err);
-    }
+    const updatedProducts = products.filter(p => p.id !== prodId);
+    onUpdateProducts(updatedProducts);
   };
 
   // Save Settings
-  const handleSaveSettings = async (e: React.FormEvent) => {
+  const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     setSavingSettings(true);
     setSettingsSuccess(false);
@@ -293,22 +282,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         heroModelUrl: settingsForm.heroModelUrl,
         accentColor: settingsForm.accentColor,
         announcementText: settingsForm.announcementText,
-        promoActive: settingsForm.promoActive
+        promoActive: settingsForm.promoActive,
+        adminPhone: settingsForm.adminPhone
       };
 
-      // Save Site Settings
-      await setDoc(doc(db, 'site_settings', 'main'), updatedSettings);
+      onUpdateSettings(updatedSettings);
 
       // Save New Passcode if provided
       if (settingsForm.newPasscode.trim()) {
-        await setDoc(doc(db, 'admin_auth', 'config'), {
-          passcode: settingsForm.newPasscode.trim()
-        });
+        localStorage.setItem('aesthete_admin_passcode', settingsForm.newPasscode.trim());
         setActualPasscode(settingsForm.newPasscode.trim());
       }
 
       setSettingsSuccess(true);
-      onRefreshData();
       setTimeout(() => setSettingsSuccess(false), 3000);
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -342,47 +328,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // Calculate Overview Metrics
-  const totalRevenue = orders
-    .filter(o => o.status !== 'cancelled')
-    .reduce((acc, o) => acc + o.total, 0);
-
-  const pendingOrders = orders.filter(o => o.status === 'pending').length;
-  const lowStockProducts = products.filter(p => p.stock <= 3).length;
-
-  // Chart Data compilation (last 7 days of sales)
-  const chartData = React.useMemo(() => {
-    const days: Record<string, number> = {};
-    // Seed last 7 days
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      days[label] = 0;
-    }
-
-    orders.forEach((ord) => {
-      if (ord.status !== 'cancelled') {
-        const ordDate = new Date(ord.createdAt);
-        const label = ordDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-        if (days[label] !== undefined) {
-          days[label] += ord.total;
-        }
-      }
-    });
-
-    return Object.entries(days).map(([name, sales]) => ({ name, sales }));
-  }, [orders]);
-
   return (
     <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center bg-black/50 backdrop-blur-xs" id="admin-modal-root">
-      {/* Absolute Backdrop close */}
       <div className="absolute inset-0" onClick={onClose} />
 
-      {/* Main Container */}
       <div className="relative bg-white w-full max-w-6xl h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col z-10 animate-scale-in border border-gray-100">
         
-        {/* Modal topbar header */}
         <div className="bg-gray-900 text-white px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -396,7 +347,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
         </div>
 
-        {/* STEP 1: AUTHENTICATION LOCK */}
         {!isAuthenticated ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 bg-gray-50/50">
             <div className="w-full max-w-sm bg-white p-8 rounded-2xl shadow-xl border border-gray-100/60 text-center space-y-6">
@@ -434,10 +384,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
         ) : (
-          
-          /* STEP 2: CONSOLE UNLOCKED */
           <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-            {/* Left Sidebar Navigation */}
             <aside className="w-full md:w-56 bg-gray-50 border-r border-gray-100 p-4 space-y-2 flex flex-row md:flex-col shrink-0 overflow-x-auto md:overflow-x-visible">
               <button
                 onClick={() => setActiveTab('overview')}
@@ -481,13 +428,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </aside>
 
-            {/* Right Main Content */}
             <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-white">
               
-              {/* TAB 1: OVERVIEW & ORDERS */}
               {activeTab === 'overview' && (
                 <div className="space-y-8 animate-fade-in">
-                  {/* Top Stats Cards widgets */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                     <div className="bg-gray-50 border border-gray-100 p-5 rounded-2xl relative overflow-hidden">
                       <TrendingUp className="absolute right-4 top-4 w-10 h-10 text-gray-200" />
@@ -518,7 +462,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Sales trend chart */}
                   <div className="bg-gray-50/50 border border-gray-100 rounded-2xl p-6">
                     <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">Sales Performance (Last 7 Days)</h4>
                     <div className="h-64">
@@ -537,7 +480,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Registered Orders List */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Recorded Orders Catalog</h4>
@@ -559,49 +501,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <tbody className="divide-y divide-gray-50">
                             {orders.map((ord) => (
                               <tr key={ord.id} className="hover:bg-gray-50/50 transition-colors">
-                                {/* Id */}
                                 <td className="py-4 px-4 font-mono font-semibold text-gray-600">{ord.id}</td>
-                                
-                                {/* Customer Info */}
                                 <td className="py-4 px-4">
                                   <p className="font-bold text-gray-900">{ord.customerName}</p>
                                   <p className="text-[10px] text-gray-400 mt-0.5">{ord.customerPhone}</p>
                                   <p className="text-[10px] text-gray-400">{ord.customerEmail}</p>
                                 </td>
-
-                                {/* Items & Sum */}
                                 <td className="py-4 px-4">
                                   <div className="max-w-xs truncate text-gray-600 font-medium">
                                     {ord.items.map(item => `${item.name} (x${item.quantity})`).join(', ')}
                                   </div>
                                   <p className="font-bold text-gray-950 mt-1 text-sm">${ord.total.toFixed(2)}</p>
                                 </td>
-
-                                {/* Address */}
                                 <td className="py-4 px-4 text-gray-500 font-medium">
                                   <p className="truncate max-w-[150px]">{ord.customerAddress}</p>
                                   <p className="text-[10px] uppercase tracking-wider">{ord.customerCity}</p>
                                 </td>
-
-                                {/* Status manager selection drop */}
                                 <td className="py-4 px-4">
-                                  <select
-                                    value={ord.status}
-                                    onChange={(e) => handleUpdateOrderStatus(ord.id, e.target.value as any)}
-                                    className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] tracking-wider uppercase border outline-none cursor-pointer ${
+                                  <span className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] tracking-wider uppercase border ${
                                       ord.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-200' :
                                       ord.status === 'processing' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                                       ord.status === 'shipped' ? 'bg-purple-50 text-purple-600 border-purple-200' :
                                       ord.status === 'delivered' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
                                       'bg-gray-50 text-gray-400 border-gray-200'
-                                    }`}
-                                  >
-                                    <option value="pending">Pending</option>
-                                    <option value="processing">Processing</option>
-                                    <option value="shipped">Shipped</option>
-                                    <option value="delivered">Delivered</option>
-                                    <option value="cancelled">Cancelled</option>
-                                  </select>
+                                    }`}>
+                                    {ord.status}
+                                  </span>
                                 </td>
                               </tr>
                             ))}
@@ -617,11 +542,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               )}
 
-              {/* TAB 2: PRODUCTS CATALOG MANAGEMENT */}
               {activeTab === 'products' && (
                 <div className="space-y-8 animate-fade-in">
-                  
-                  {/* Action top bars */}
                   <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                     <div>
                       <h3 className="text-sm font-display font-bold text-gray-950">Store Products Controller</h3>
@@ -652,11 +574,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     )}
                   </div>
 
-                  {/* ADD / EDIT PRODUCT FORM */}
                   {(isAddingProduct || editingProduct) && (
                     <form onSubmit={handleProductSubmit} className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100/80 grid grid-cols-1 md:grid-cols-12 gap-6 relative">
-                      
-                      {/* Close button */}
                       <button
                         type="button"
                         onClick={() => {
@@ -674,7 +593,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {editingProduct ? `Edit Product: ${editingProduct.name}` : 'Create New Product'}
                       </h4>
 
-                      {/* Name input */}
                       <div className="md:col-span-6 space-y-1.5">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Product Name *</label>
                         <input
@@ -687,7 +605,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
 
-                      {/* Category select */}
                       <div className="md:col-span-6 space-y-1.5">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Category Category *</label>
                         <select
@@ -701,7 +618,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </select>
                       </div>
 
-                      {/* Description Area (supports AI writing) */}
                       <div className="md:col-span-12 space-y-1.5">
                         <div className="flex items-center justify-between">
                           <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Description & Copywriting *</label>
@@ -723,10 +639,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onChange={(e) => setProdForm({ ...prodForm, description: e.target.value })}
                           className="w-full px-4 py-3 bg-white border border-gray-200/80 rounded-xl text-xs font-medium outline-none text-gray-800 focus:border-gray-400 transition-colors resize-none leading-relaxed"
                         />
-                        <p className="text-[9px] text-gray-400 font-medium">💡 Quick Tip: Type the product name above first, then click "AI Generate" to write beautiful marketing descriptions using Gemini!</p>
                       </div>
 
-                      {/* Pricing Block */}
                       <div className="md:col-span-4 space-y-1.5">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Price ($) *</label>
                         <input
@@ -740,7 +654,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
 
-                      {/* Original Price (discount support) */}
                       <div className="md:col-span-4 space-y-1.5">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Original Price ($) (Optional)</label>
                         <input
@@ -752,7 +665,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
 
-                      {/* Stock levels */}
                       <div className="md:col-span-4 space-y-1.5">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Stock Inventory *</label>
                         <input
@@ -765,32 +677,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
 
-                      {/* Primary product image link */}
                       <div className="md:col-span-6 space-y-1.5">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Product Image URL *</label>
                         <input
                           type="url"
                           required
-                          placeholder="Paste Unsplash image or upload asset..."
+                          placeholder="Paste image link..."
                           value={prodForm.imageUrl}
                           onChange={(e) => setProdForm({ ...prodForm, imageUrl: e.target.value })}
                           className="w-full px-4 py-2.5 bg-white border border-gray-200/80 rounded-xl text-xs font-medium outline-none text-gray-800 focus:border-gray-400 transition-colors"
                         />
                       </div>
 
-                      {/* Optional 3D Model link */}
                       <div className="md:col-span-6 space-y-1.5">
                         <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Product 3D Model GLB URL (Optional)</label>
                         <input
                           type="url"
-                          placeholder="Paste link to GLB 3D file..."
+                          placeholder="Paste link to GLB file..."
                           value={prodForm.modelUrl}
                           onChange={(e) => setProdForm({ ...prodForm, modelUrl: e.target.value })}
                           className="w-full px-4 py-2.5 bg-white border border-gray-200/80 rounded-xl text-xs font-medium outline-none text-gray-800 focus:border-gray-400 transition-colors"
                         />
                       </div>
 
-                      {/* Featured Checkbox toggle */}
                       <div className="md:col-span-12 flex items-center gap-2 pt-1 select-none">
                         <input
                           type="checkbox"
@@ -800,11 +709,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                         <label htmlFor="featured-checkbox" className="text-xs font-semibold text-gray-700 cursor-pointer">
-                          Mark as Featured (Will display prominently in top positions with high-contrast label)
+                          Mark as Featured
                         </label>
                       </div>
 
-                      {/* Form action triggers */}
                       <div className="md:col-span-12 flex justify-end gap-3 pt-4 border-t border-gray-100">
                         <button
                           type="button"
@@ -828,7 +736,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </form>
                   )}
 
-                  {/* Registered Store Products Grid / Table view */}
                   <div className="space-y-4">
                     <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest border-b border-gray-150 pb-2">Active Catalog list</h4>
 
@@ -857,22 +764,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <button
                                   onClick={() => startEdit(prod)}
                                   className="p-1.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors cursor-pointer"
-                                  title="Edit details"
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteProduct(prod.id)}
                                   className="p-1.5 rounded-lg bg-rose-50 border border-rose-100/50 text-rose-500 hover:text-rose-600 hover:bg-rose-100 transition-colors cursor-pointer"
-                                  title="Delete product"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                                {prod.modelUrl && (
-                                  <span className="text-[9px] font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md ml-auto">
-                                    3D Active
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -880,20 +780,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                     ) : (
                       <div className="text-center py-12 bg-gray-50 rounded-2xl text-gray-400">
-                        No products inside the catalog. Use the form to populate.
+                        No products inside the catalog.
                       </div>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* TAB 3: SITE SETTINGS MODIFIER */}
               {activeTab === 'settings' && (
                 <form onSubmit={handleSaveSettings} className="space-y-6 animate-fade-in" id="settings-tab-form">
                   <div className="flex items-center justify-between border-b border-gray-100 pb-4">
                     <div>
                       <h3 className="text-sm font-display font-bold text-gray-950">Modify Site Identity & Presentation</h3>
-                      <p className="text-[10px] text-gray-400 mt-0.5">Control hero copy, enable/disable 3D canvas, change visual look.</p>
                     </div>
                   </div>
 
@@ -903,21 +801,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   )}
 
-                  {/* Settings Grid inputs */}
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                    {/* Announcement text */}
                     <div className="md:col-span-8 space-y-1.5">
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Top Banner Announcement message</label>
                       <input
                         type="text"
-                        placeholder="e.g. ✨ FREE SHIPPING ON ORDERS OVER $150"
                         value={settingsForm.announcementText}
                         onChange={(e) => setSettingsForm({ ...settingsForm, announcementText: e.target.value })}
                         className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 focus:border-gray-400 rounded-xl text-xs font-medium outline-none text-gray-800"
                       />
                     </div>
 
-                    {/* Announcement status flag */}
                     <div className="md:col-span-4 flex items-center pt-6 select-none">
                       <input
                         type="checkbox"
@@ -931,27 +825,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </label>
                     </div>
 
-                    {/* Accent Color hex input */}
                     <div className="md:col-span-4 space-y-1.5">
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Theme Accent Color</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="color"
-                          value={settingsForm.accentColor}
-                          onChange={(e) => setSettingsForm({ ...settingsForm, accentColor: e.target.value })}
-                          className="w-10 h-10 border border-gray-200 rounded-xl cursor-pointer"
-                        />
-                        <input
-                          type="text"
-                          placeholder="#3b82f6"
-                          value={settingsForm.accentColor}
-                          onChange={(e) => setSettingsForm({ ...settingsForm, accentColor: e.target.value })}
-                          className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-100 focus:border-gray-400 rounded-xl text-xs font-mono font-bold outline-none text-gray-800"
-                        />
-                      </div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Admin WhatsApp Number</label>
+                      <input
+                        type="tel"
+                        placeholder="e.g. 1234567890"
+                        value={settingsForm.adminPhone}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, adminPhone: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 focus:border-gray-400 rounded-xl text-xs font-medium outline-none text-gray-800"
+                      />
                     </div>
 
-                    {/* Hero Title input */}
+                    <div className="md:col-span-4 space-y-1.5">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Theme Accent Color</label>
+                      <input
+                        type="color"
+                        value={settingsForm.accentColor}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, accentColor: e.target.value })}
+                        className="w-10 h-10 border border-gray-200 rounded-xl cursor-pointer"
+                      />
+                    </div>
+
                     <div className="md:col-span-12 space-y-1.5">
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Hero Headline Title</label>
                       <input
@@ -963,7 +857,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
 
-                    {/* Hero Subtitle input */}
                     <div className="md:col-span-12 space-y-1.5">
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Hero Subtitle</label>
                       <textarea
@@ -975,7 +868,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
 
-                    {/* Hero CTA button string */}
                     <div className="md:col-span-4 space-y-1.5">
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Hero CTA text</label>
                       <input
@@ -987,7 +879,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
 
-                    {/* Static Fallback Hero image */}
                     <div className="md:col-span-8 space-y-1.5">
                       <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fallback Static Hero Image URL</label>
                       <input
@@ -999,50 +890,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
 
-                    {/* Hero 3D GLB model link */}
-                    <div className="md:col-span-8 space-y-1.5">
-                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Hero 3D Model GLB URL</label>
-                      <input
-                        type="url"
-                        value={settingsForm.heroModelUrl}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, heroModelUrl: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 focus:border-gray-400 rounded-xl text-xs font-semibold outline-none text-gray-800"
-                      />
-                    </div>
-
-                    {/* Hero 3D Toggle */}
-                    <div className="md:col-span-4 flex items-center pt-6 select-none">
-                      <input
-                        type="checkbox"
-                        id="settings-3d-active"
-                        checked={settingsForm.heroModelActive}
-                        onChange={(e) => setSettingsForm({ ...settingsForm, heroModelActive: e.target.checked })}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer mr-2"
-                      />
-                      <label htmlFor="settings-3d-active" className="text-xs font-semibold text-gray-700 cursor-pointer">
-                        Enable Interactive 3D Hero
-                      </label>
-                    </div>
-
-                    {/* Admin passcode change */}
                     <div className="md:col-span-12 border-t border-gray-100 pt-6 space-y-1.5">
-                      <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Security Console Passcode</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                        <div className="md:col-span-3 space-y-1.5">
-                          <label className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Change Passcode (Leave empty to keep current)</label>
-                          <input
-                            type="text"
-                            placeholder="Type new passcode..."
-                            value={settingsForm.newPasscode}
-                            onChange={(e) => setSettingsForm({ ...settingsForm, newPasscode: e.target.value })}
-                            className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 focus:border-gray-400 rounded-xl text-xs font-mono font-bold outline-none text-gray-800"
-                          />
-                        </div>
-                      </div>
+                      <label className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider">Change Passcode</label>
+                      <input
+                        type="text"
+                        placeholder="Type new passcode..."
+                        value={settingsForm.newPasscode}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, newPasscode: e.target.value })}
+                        className="w-full max-w-xs px-4 py-2.5 bg-gray-50 border border-gray-100 focus:border-gray-400 rounded-xl text-xs font-mono font-bold outline-none text-gray-800"
+                      />
                     </div>
                   </div>
 
-                  {/* Actions footer */}
                   <div className="flex justify-end pt-4 border-t border-gray-100">
                     <button
                       type="submit"
@@ -1056,12 +915,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </form>
               )}
 
-              {/* TAB 4: ASSETS & MEDIA LIBRARY LINKS */}
               {activeTab === 'media' && (
                 <div className="space-y-6 animate-fade-in">
                   <div className="border-b border-gray-100 pb-4">
                     <h3 className="text-sm font-display font-bold text-gray-950">Store Template Assets Library</h3>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Use these tested clean premium static images and verified 3D models for testing!</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1069,7 +926,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div key={idx} className="bg-gray-50 border border-gray-100/60 p-4 rounded-xl flex items-center justify-between gap-4">
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-gray-800 truncate">{asset.name}</p>
-                          <p className="text-[9px] font-mono font-semibold text-blue-500 uppercase mt-0.5">{asset.type}</p>
                           <p className="text-[10px] text-gray-400 truncate mt-1 font-mono">{asset.url}</p>
                         </div>
 
@@ -1080,7 +936,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
                               : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'
                           }`}
-                          title="Copy Link to Clipboard"
                         >
                           {copiedIndex === idx ? (
                             <Check className="w-4 h-4" />

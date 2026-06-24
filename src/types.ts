@@ -59,4 +59,5 @@ export interface SiteSettings {
   accentColor: string; // e.g. '#60a5fa' (light blue)
   announcementText: string;
   promoActive: boolean;
+  adminPhone: string;
 }
